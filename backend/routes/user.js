@@ -5,6 +5,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 const { JWT_SECRET } = require("../config");
 const zod = require("zod"); 
+const {authMiddleware}=require("../middlewares/authMiddleware");
 
 const signupBody = zod.object({
     username: zod.string().email(),
@@ -17,6 +18,12 @@ const signupBody = zod.object({
 const signinBody=zod.object({
     username:zod.string().email(),
     password:zod.string()
+})
+
+const updateBody=zod.object({
+    password:zod.string().optional(),
+    firstName:zod.string().optional(),
+    lastName:zod.string().optional(),
 })
 
 router.post("/signup", async (req, res) => {
@@ -82,12 +89,32 @@ router.post("/signin",async(req,res)=>{
         token
     });
 
-    res.status(411).json({
-        message:"Error while logging in"
-    })
+  
 
 });
 
+router.put("/", authMiddleware, async (req, res) => {
+    const { success } = updateBody.safeParse(req.body);
+
+    if (!success) {
+        return res.status(411).json({
+            message: "Error while updating information"
+        });
+    }
+
+    const updateData = { ...req.body };
+
+    // Hash password if it's being updated
+    if (updateData.password) {
+        updateData.password = await bcrypt.hash(updateData.password, 10);
+    }
+
+    await User.updateOne({ _id: req.userId }, updateData);
+
+    return res.json({
+        message: "Updated successfully"
+    });
+});
 
 
 module.exports = router;
