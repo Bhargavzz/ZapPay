@@ -5,8 +5,9 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 const { JWT_SECRET } = require("../config");
 const zod = require("zod"); 
-const {authMiddleware}=require("../middlewares/authMiddleware");
+const { authMiddleware } = require("../middlewares/authMiddleware");
 
+// ------------------- Zod Schemas ------------------- //
 const signupBody = zod.object({
     username: zod.string().email(),
     firstName: zod.string(),
@@ -14,18 +15,20 @@ const signupBody = zod.object({
     password: zod.string().min(6)
 });
 
+const signinBody = zod.object({
+    username: zod.string().email(),
+    password: zod.string()
+});
 
-const signinBody=zod.object({
-    username:zod.string().email(),
-    password:zod.string()
-})
+const updateBody = zod.object({
+    password: zod.string().min(6).optional(),
+    firstName: zod.string().optional(),
+    lastName: zod.string().optional(),
+});
 
-const updateBody=zod.object({
-    password:zod.string().optional(),
-    firstName:zod.string().optional(),
-    lastName:zod.string().optional(),
-})
+// ------------------- Routes ------------------- //
 
+// SIGNUP
 router.post("/signup", async (req, res) => {
     const { success } = signupBody.safeParse(req.body);
 
@@ -35,18 +38,14 @@ router.post("/signup", async (req, res) => {
         });
     }
 
-    const existingUser = await User.findOne({
-        username: req.body.username
-    });
-
+    const existingUser = await User.findOne({ username: req.body.username });
     if (existingUser) {
         return res.status(411).json({
             message: "Email already taken"
         });
     }
 
-    //  hash the password before saving
-    const hashedPassword = await bcrypt.hash(req.body.password, 10); // 10 salt rounds
+    const hashedPassword = await bcrypt.hash(req.body.password, 10);
 
     const user = await User.create({
         username: req.body.username,
@@ -55,44 +54,43 @@ router.post("/signup", async (req, res) => {
         lastName: req.body.lastName,
     });
 
-    const userId = user._id;
-    const token = jwt.sign({ userId }, JWT_SECRET);
+    const token = jwt.sign({ userId: user._id }, JWT_SECRET);
 
-    res.json({
+    return res.status(201).json({
         message: "User created successfully",
-        token: token
+        token
     });
 });
 
+// SIGNIN
+router.post("/signin", async (req, res) => {
+    const { success } = signinBody.safeParse(req.body);
 
-router.post("/signin",async(req,res)=>{
-    const {success}=signinBody.safeParse(req.body);
-    if(!success){
+    if (!success) {
         return res.status(411).json({
-            message:"Invalid inputs or email format"
-            });
+            message: "Invalid inputs or email format"
+        });
     }
+
     const user = await User.findOne({ username: req.body.username });
     if (!user) {
         return res.status(411).json({ message: "User not found" });
     }
 
-    const isPasswordCorrect = await bcrypt.compare(req.body.password, user.password); //  Compare hashes
+    const isPasswordCorrect = await bcrypt.compare(req.body.password, user.password);
     if (!isPasswordCorrect) {
         return res.status(411).json({ message: "Incorrect password" });
     }
 
     const token = jwt.sign({ userId: user._id }, JWT_SECRET);
 
-    res.json({
+    return res.json({
         message: "Logged in successfully",
         token
     });
-
-  
-
 });
 
+// UPDATE PROFILE
 router.put("/", authMiddleware, async (req, res) => {
     const { success } = updateBody.safeParse(req.body);
 
@@ -104,7 +102,7 @@ router.put("/", authMiddleware, async (req, res) => {
 
     const updateData = { ...req.body };
 
-    // Hash password if it's being updated
+    // Hash new password if present
     if (updateData.password) {
         updateData.password = await bcrypt.hash(updateData.password, 10);
     }
@@ -116,5 +114,25 @@ router.put("/", authMiddleware, async (req, res) => {
     });
 });
 
+// BULK USER SEARCH
+router.get("/bulk", async (req, res) => {
+    const filter = req.query.filter || "";
+
+    const users = await User.find({
+        $or: [
+            { firstName: { $regex: filter, $options: "i" } },
+            { lastName: { $regex: filter, $options: "i" } }
+        ]
+    });
+
+    return res.json({
+        users: users.map(user => ({
+            username: user.username,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            _id: user._id
+        }))
+    });
+});
 
 module.exports = router;
