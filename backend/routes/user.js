@@ -1,11 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { User } = require("../db");
+const { User,Account } = require("../db");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 const { JWT_SECRET } = require("../config");
 const zod = require("zod"); 
 const { authMiddleware } = require("../middlewares/authMiddleware");
+const { inrToPaise } = require("../utils/money");
+
 
 // ------------------- Zod Schemas ------------------- //
 const signupBody = zod.object({
@@ -53,6 +55,14 @@ router.post("/signup", async (req, res) => {
         firstName: req.body.firstName,
         lastName: req.body.lastName,
     });
+
+    const userId=user._id;
+
+    //creat new account
+    await Account.create({
+        userId,
+        balance: inrToPaise(1 + Math.random() * 10000)
+        });
 
     const token = jwt.sign({ userId: user._id }, JWT_SECRET);
 
